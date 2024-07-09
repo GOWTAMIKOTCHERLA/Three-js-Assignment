@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Interactive 2D Polygon in Three.js</title>
+    <style>
+        body {
+            margin: 0; 
+             }
+        canvas { 
+               display: block; 
+               }
+        button {
+            position: absolute;
+            padding: 10px 20px;
+            background-color:gray;
+            color: #FFF;
+            border:2cm;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #complete-button {
+            bottom: 10px;
+            left: 20%;
+        }
+        #copy-button {
+            bottom: 10px;
+            left: 10%;
+        }
+        #reset-button {
+            bottom: 10px;
+            
+            left: 30%;
+        }
+    </style>
+</head>
+<body>
+    <button id="complete-button" click="onclick">Complete</button>
+    <button id="copy-button" click="onclick">Copy</button>
+    <button id="reset-button" click="onclick">Reset</button>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Set up the scene
+        const scene = new THREE.Scene();
+
+        // Set up the camera
+        const camera = new THREE.OrthographicCamera(
+            window.innerWidth / -1.9, window.innerWidth / 1.9,
+            window.innerHeight / 1.8, window.innerHeight / -1.8,
+            1, 1000
+        );
+        camera.position.z = 5;
+
+       // Set up the renderer
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Create the ground
+        const groundGeometry = new THREE.PlaneGeometry(window.innerWidth, window.innerHeight);
+        const groundMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+
+        // Create grid lines
+        const gridHelper = new THREE.GridHelper(window.innerWidth, 30, 0x000000, 0x000000);
+        gridHelper.rotation.x = Math.PI / 2; // Rotate the grid to lie flat
+
+        // Add ground and grid to the scene
+        scene.add(ground);
+        scene.add(gridHelper);
+
+        // Variables to store vertices and polygons
+        const vertices = [];
+        let polygonMesh = null;
+        const polygons = [];
+        let copyPolygon = null;
+
+        // Polygon class
+       class Polygon {
+            constructor(vertices) {
+                this.vertices = vertices;
+                this.shape = new THREE.Shape(vertices);
+                this.geometry = new THREE.ShapeGeometry(this.shape);
+                this.material = new THREE.MeshBasicMaterial({ color: "red", side: THREE.DoubleSide });
+                this.mesh = new THREE.Mesh(this.geometry, this.material);
+
+                this.edges = new THREE.EdgesGeometry(this.geometry);
+                this.lineMaterial = new THREE.LineBasicMaterial({ color:'black'});
+                this.line = new THREE.LineSegments(this.edges, this.lineMaterial);
+
+                scene.add(this.mesh);
+                scene.add(this.line);
+            }
+
+            setPosition(x, y) {
+                this.mesh.position.set(x, y, 0);
+                this.line.position.set(x, y, 0);
+            }
+
+            removeFromScene() {
+                scene.remove(this.mesh);
+                scene.remove(this.line);
+            }
+        }
+
+      // Handle mouse click to add vertices
+        window.addEventListener('click', (event) => {
+            if (copyPolygon) return; // Ignore clicks if copying polygon
+
+            const mouse = new THREE.Vector2();
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(ground);
+
+            if (intersects.length > 0) {
+                const point = intersects[0].point;
+                vertices.push(new THREE.Vector3(point.x, point.y, 0));
+                drawVertices();
+            }
+        });
+
+        // Draw vertices
+        function drawVertices() {
+            if (polygonMesh) {
+                scene.remove(polygonMesh);
+            }
+
+            const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+            const material = new THREE.PointsMaterial({ color: 0x00ff00, size: 10 });
+            const points = new THREE.Points(geometry, material);
+            scene.add(points);
+
+            polygonMesh = points;
+        }
+
+        // Complete button functionality
+        document.getElementById('complete-button').addEventListener('click', () => {
+            if (vertices.length < 3) return; // Ensure there are at least 3 vertices
+
+            const polygon = new Polygon(vertices.slice());
+            polygons.push(polygon);
+
+            // Clear vertices array and remove points
+            vertices.length = 0;
+            scene.remove(polygonMesh);
+            polygonMesh = null;
+            console.log('polygonscomplete',polygons)
+        });
+
+        // Copy button functionality
+        document.getElementById('copy-button').addEventListener('click', () => {
+            console.log('copyPolygon',polygons)
+
+            if (polygons.length <= 2) return; // Ensure there is at least one polygon to copy
+            copyPolygon = polygons[polygons.length - 1];
+            window.addEventListener('mousemove', moveCopyPolygon);
+            window.addEventListener('click', placeCopyPolygon, { once: true });
+        });
+
+        function moveCopyPolygon(event) {
+            const mouse = new THREE.Vector2();
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(ground);
+
+            if (intersects.length > 0) {
+                const point = intersects[0].point;
+                copyPolygon.setPosition(point.x, point.y);
+            }
+        }
+
+        function placeCopyPolygon() {
+            window.removeEventListener('mousemove', moveCopyPolygon);
+            const newPolygon = new Polygon(copyPolygon.vertices.slice());
+            newPolygon.setPosition(copyPolygon.mesh.position.x, copyPolygon.mesh.position.y);
+            polygons.push(newPolygon);
+            copyPolygon = null;
+        }
+
+        // Reset button functionality
+        document.getElementById('reset-button').addEventListener('click', () => {
+            polygons.forEach(polygon => polygon.removeFromScene());
+            polygons.length = 0;
+            vertices.length = 0;
+            scene.remove(polygonMesh);
+            polygonMesh = null;
+        });
+
+        // Render the scene
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.left = window.innerWidth / -2;
+            camera.right = window.innerWidth / 2;
+            camera.top = window.innerHeight / 2;
+            camera.bottom = window.innerHeight / -2;
+            camera.updateProjectionMatrix();
+        });
+    </script>
+</body>
+</html>
